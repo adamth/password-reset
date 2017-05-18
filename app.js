@@ -11,6 +11,7 @@ var LocalStrategy = require('passport-local').Strategy;
 var bcrypt = require('bcrypt-nodejs');
 var async = require('async');
 var crypto = require('crypto');
+var flash = require('express-flash');
 
 mongoose.connect('localhost');
 var app = express();
@@ -24,16 +25,16 @@ var userSchema = new mongoose.Schema({
 });
 
 userSchema.pre('save', function(next) {
-  const user = this;
-  const SALT_FACTOR = 5;
+  var user = this;
+  var SALT_FACTOR = 5;
 
   if (!user.isModified('password')) return next();
 
-  bcrypt.genSalt(SALT_FACTOR,(err, salt) => {
-    if(err) return next(err);
+  bcrypt.genSalt(SALT_FACTOR, function(err, salt) {
+    if (err) return next(err);
 
-    bcrypt.hash(user.password, salt, (err, hash) => {
-      if(err) return next(err);
+    bcrypt.hash(user.password, salt, null, function(err, hash) {
+      if (err) return next(err);
       user.password = hash;
       next();
     });
@@ -41,9 +42,9 @@ userSchema.pre('save', function(next) {
 });
 
 userSchema.methods.comparePassword = function(candidatePassword, cb) {
-  bcrypt.compare(candidatePassword, this.password, (err, result) => {
-    if(err) return cb(err);
-    cb(null, result);
+  bcrypt.compare(candidatePassword, this.password, function(err, isMatch) {
+    if (err) return cb(err);
+    cb(null, isMatch);
   });
 };
 
@@ -85,6 +86,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded());
 app.use(cookieParser());
 app.use(session({ secret: 'session secret key' }));
+app.use(flash());
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -109,7 +111,32 @@ app.get('/signup', (req,res) => {
   res.render('signup', {
     user: req.user
   });
-})
+});
+
+app.post('/signup', (req, res) => {
+  var user = new User({
+    username: req.body.username,
+    email: req.body.email,
+    password: req.body.password
+  });
+
+  user.save().then(() => {
+    req.logIn(user, (err) => {
+      res.redirect('/');
+    });
+  });
+});
+
+app.get('/logout', (req, res) => {
+  req.logout();
+  res.redirect('/');
+});
+
+app.get('/forgot', (req, res) => {
+  res.render('forgot', {
+    user: req.user
+  });
+});
 
 app.post('/login', (req,res, next) => {
   passport.authenticate('local', (err, user, info) => {

@@ -107,6 +107,20 @@ app.get('/login', (req, res) => {
   });
 });
 
+app.post('/login', (req, res, next) => {
+  passport.authenticate('local', (err, user, info) => {
+    if (err) return next(err);
+    if (!user) {
+      return res.redirect('/login')
+    }
+    req.logIn(user, (err) => {
+      if (err) return next(err);
+      return res.redirect('/')
+    });
+  })(req, res, next);
+});
+
+
 app.get('/signup', (req, res) => {
   res.render('signup', {
     user: req.user
@@ -162,7 +176,6 @@ app.post('/forgot', (req, res) => {
       });
     },
     (token, user, done) => {
-      console.log(user)
       let poolConfig = {
         pool: true,
         host: 'smtp.zoho.com',
@@ -174,7 +187,6 @@ app.post('/forgot', (req, res) => {
         }
       };
       var smtpTransport = nodemailer.createTransport(poolConfig);
-      console.log(user.email)
       let mailOptions = {
           from: '"Password reset" <noreply@adamth.com>', // sender address
           to: user.email, // list of receivers
@@ -188,7 +200,7 @@ app.post('/forgot', (req, res) => {
         console.log(info)
         req.flash('info', `An email has been sent to ${user.email} with further instructions.`);
         done(err, 'done');
-      })
+      });
     }
   ],(err) => {
     if(err) return next(err);
@@ -196,18 +208,67 @@ app.post('/forgot', (req, res) => {
   });
 });
 
-app.post('/login', (req, res, next) => {
-  passport.authenticate('local', (err, user, info) => {
-    if (err) return next(err);
-    if (!user) {
-      return res.redirect('/login')
+app.post('/reset/:token', (req, res) => {
+  async.waterfall([
+    (done) => {
+      User.findOne({ resetPasswordToken: req.params.token, resetPasswordExpires: { $gt: Date.now() } }, (err, user) => {
+        if(!user) {
+          req.flash('error', 'Password reset token is invalid or expired.');
+          return res.redirect('/forgot');
+        }
+        
+        user.password = req.body.password;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+
+        user.save((err) => {
+          req.logIn(user, (err) => {
+            done(err, user);
+          });
+        });
+      });
+    },
+    (user, done) => {
+      let poolConfig = {
+        pool: true,
+        host: 'smtp.zoho.com',
+        port: 465,
+        secure: true, // use TLS
+        auth: {
+          user: 'adam@adamth.com',
+          pass: 'rj2jGcme3CQW'
+        }
+      };
+      var smtpTransport = nodemailer.createTransport(poolConfig);
+      let mailOptions = {
+          from: '"Password reset" <noreply@adamth.com>', // sender address
+          to: user.email, // list of receivers
+          subject: 'Your password has been changed.', // Subject line
+          text: 'Hello,\n\n' +
+          'This is a confirmation that the password for your account ' + user.email + ' has just been changed.\n'
+      };
+      smtpTransport.sendMail(mailOptions,(err,info) => {
+        console.log(info)
+        req.flash('info', `An email has been sent to ${user.email} with further instructions.`);
+        done(err, 'done');
+      });
     }
-    req.logIn(user, (err) => {
-      if (err) return next(err);
-      return res.redirect('/')
-    })
-  })(req, res, next);
-})
+  ], (err) => {
+    res.redirect('/');
+  });
+});
+
+app.get('/reset/:token', (req, res) => {
+  User.findOne({ resetPasswordToken: req.params.token, resetPasswordExpires: { $gt: Date.now() } }, function(err, user) {
+    if (!user) {
+      req.flash('error', 'Password reset token is invalid or has expired.');
+      return res.redirect('/forgot');
+    }
+    res.render('reset', {
+      user: req.user
+    });
+  });
+});
 
 app.listen(app.get('port'), function () {
   console.log('Express server listening on port ' + app.get('port'));

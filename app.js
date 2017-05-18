@@ -15,17 +15,6 @@ var crypto = require('crypto');
 mongoose.connect('localhost');
 var app = express();
 
-// Middleware
-app.set('port', process.env.PORT || 3000);
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'jade');
-app.use(logger('dev'));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded());
-app.use(cookieParser());
-app.use(session({ secret: 'session secret key' }));
-app.use(express.static(path.join(__dirname, 'public')));
-
 var userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
@@ -77,10 +66,63 @@ passport.use(new LocalStrategy((username, password, done) => {
   });
 }));
 
-// Routes
-app.get('/', function(req, res) {
-  res.render('index', { title: 'Express' });
+passport.serializeUser((user, done) => {
+  done(null, user.id);
 });
+
+passport.deserializeUser((id, done) => {
+  User.findById(id, function (err, user) {
+    done(err, user);
+  });
+});
+
+// Middleware
+app.set('port', process.env.PORT || 3000);
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'jade');
+app.use(logger('dev'));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded());
+app.use(cookieParser());
+app.use(session({ secret: 'session secret key' }));
+app.use(passport.initialize());
+app.use(passport.session());
+app.use(express.static(path.join(__dirname, 'public')));
+
+
+
+// Routes
+app.get('/', (req, res) => {
+  res.render('index', { 
+    title: 'Password Reset',
+    user: req.user
+   });
+});
+
+app.get('/login', (req, res) => {
+  res.render('login', {
+    user: req.user
+  });
+});
+
+app.get('/signup', (req,res) => {
+  res.render('signup', {
+    user: req.user
+  });
+})
+
+app.post('/login', (req,res, next) => {
+  passport.authenticate('local', (err, user, info) => {
+    if(err) return next(err);
+    if(!user) {
+      return res.redirect('/login')
+    }
+    req.logIn(user, (err) => {
+      if(err) return next(err);
+      return res.redirect('/')
+    })
+  })(req, res, next);
+})
 
 app.listen(app.get('port'), function() {
   console.log('Express server listening on port ' + app.get('port'));

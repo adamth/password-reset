@@ -24,16 +24,16 @@ var userSchema = new mongoose.Schema({
   resetPasswordExpires: Date
 });
 
-userSchema.pre('save', function(next) {
+userSchema.pre('save', function (next) {
   var user = this;
   var SALT_FACTOR = 5;
 
   if (!user.isModified('password')) return next();
 
-  bcrypt.genSalt(SALT_FACTOR, function(err, salt) {
+  bcrypt.genSalt(SALT_FACTOR, function (err, salt) {
     if (err) return next(err);
 
-    bcrypt.hash(user.password, salt, null, function(err, hash) {
+    bcrypt.hash(user.password, salt, null, function (err, hash) {
       if (err) return next(err);
       user.password = hash;
       next();
@@ -41,8 +41,8 @@ userSchema.pre('save', function(next) {
   });
 });
 
-userSchema.methods.comparePassword = function(candidatePassword, cb) {
-  bcrypt.compare(candidatePassword, this.password, function(err, isMatch) {
+userSchema.methods.comparePassword = function (candidatePassword, cb) {
+  bcrypt.compare(candidatePassword, this.password, function (err, isMatch) {
     if (err) return cb(err);
     cb(null, isMatch);
   });
@@ -52,11 +52,11 @@ var User = mongoose.model('User', userSchema);
 
 passport.use(new LocalStrategy((username, password, done) => {
   User.findOne({ username }).then((user) => {
-    if (!user){
-      return done(null, false, {message: 'REMOVE THIS: Incrrect username'});
+    if (!user) {
+      return done(null, false, { message: 'REMOVE THIS: Incrrect username' });
     }
     user.comparePassword(password, (err, isMatch) => {
-      if(isMatch) {
+      if (isMatch) {
         return done(null, user);
       } else {
         return done(null, false, { message: 'Incorrect password' });
@@ -84,9 +84,9 @@ app.set('view engine', 'jade');
 app.use(logger('dev'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded());
+app.use(flash());
 app.use(cookieParser());
 app.use(session({ secret: 'session secret key' }));
-app.use(flash());
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -95,10 +95,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
 app.get('/', (req, res) => {
-  res.render('index', { 
+  res.render('index', {
     title: 'Password Reset',
     user: req.user
-   });
+  });
 });
 
 app.get('/login', (req, res) => {
@@ -107,7 +107,7 @@ app.get('/login', (req, res) => {
   });
 });
 
-app.get('/signup', (req,res) => {
+app.get('/signup', (req, res) => {
   res.render('signup', {
     user: req.user
   });
@@ -138,19 +138,77 @@ app.get('/forgot', (req, res) => {
   });
 });
 
-app.post('/login', (req,res, next) => {
-  passport.authenticate('local', (err, user, info) => {
+app.post('/forgot', (req, res) => {
+
+  async.waterfall([
+    (done) => {
+      crypto.randomBytes(20, (err, buf) => {
+        var token = buf.toString('hex');
+        done(err, token);
+      });
+    },
+    (token, done) => {
+      User.findOne({ email: req.body.email }, function(err, user) {
+        if (!user) {
+          req.flash('error', 'No account with that email address exists.')
+          return res.redirect('/forgot');
+        }
+        user.resetPasswordToken = token;
+        user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+
+        user.save((err) => {
+          done(err, token, user);
+        });
+      });
+    },
+    (token, user, done) => {
+      console.log(user)
+      let poolConfig = {
+        pool: true,
+        host: 'smtp.zoho.com',
+        port: 465,
+        secure: true, // use TLS
+        auth: {
+          user: 'adam@adamth.com',
+          pass: 'rj2jGcme3CQW'
+        }
+      };
+      var smtpTransport = nodemailer.createTransport(poolConfig);
+      console.log(user.email)
+      let mailOptions = {
+          from: '"Password reset" <noreply@adamth.com>', // sender address
+          to: user.email, // list of receivers
+          subject: 'Node.js Password Reset', // Subject line
+          text: 'You are receiving this because you (or someone else) have requested the reset of the password for your account.\n\n' +
+          'Please click on the following link, or paste this into your browser to complete the process:\n\n' +
+          'http://' + req.headers.host + '/reset/' + token + '\n\n' +
+          'If you did not request this, please ignore this email and your password will remain unchanged.\n'
+      };
+      smtpTransport.sendMail(mailOptions,(err,info) => {
+        console.log(info)
+        req.flash('info', `An email has been sent to ${user.email} with further instructions.`);
+        done(err, 'done');
+      })
+    }
+  ],(err) => {
     if(err) return next(err);
-    if(!user) {
+    res.redirect('/forgot');
+  });
+});
+
+app.post('/login', (req, res, next) => {
+  passport.authenticate('local', (err, user, info) => {
+    if (err) return next(err);
+    if (!user) {
       return res.redirect('/login')
     }
     req.logIn(user, (err) => {
-      if(err) return next(err);
+      if (err) return next(err);
       return res.redirect('/')
     })
   })(req, res, next);
 })
 
-app.listen(app.get('port'), function() {
+app.listen(app.get('port'), function () {
   console.log('Express server listening on port ' + app.get('port'));
 });

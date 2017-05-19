@@ -183,7 +183,7 @@ app.post('/forgot', (req, res) => {
         secure: true, // use TLS
         auth: {
           user: 'adam@adamth.com',
-          pass: 'rj2jGcme3CQW'
+          pass: process.env.ZOHO_PASS
         }
       };
       var smtpTransport = nodemailer.createTransport(poolConfig);
@@ -236,7 +236,7 @@ app.post('/reset/:token', (req, res) => {
         secure: true, // use TLS
         auth: {
           user: 'adam@adamth.com',
-          pass: 'rj2jGcme3CQW'
+          pass: process.env.ZOHO_PASS
         }
       };
       var smtpTransport = nodemailer.createTransport(poolConfig);
